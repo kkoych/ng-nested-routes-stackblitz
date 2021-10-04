@@ -1,7 +1,8 @@
 import { Component, Input, OnChanges, OnInit } from "@angular/core";
-import { ActivatedRoute, NavigationEnd, Router } from "@angular/router";
+import { NavigationEnd, Router } from "@angular/router";
 import { State } from "@progress/kendo-data-query";
 import { products } from "../../../products";
+import { parseUrlPathInSegments } from "../../classes/url-path-parser";
 import { FilterAction } from "../../enums/filter-action.enum";
 import { GridAction } from "../../enums/grid-action.enum";
 import { FilterRequest } from "../../interfaces/filter";
@@ -38,7 +39,6 @@ export class MasterPageComponent implements OnChanges, OnInit {
 
   constructor(
     private router: Router,
-    private route: ActivatedRoute,
     private selectedDataService: SelectedDataService
   ) {}
 
@@ -59,25 +59,15 @@ export class MasterPageComponent implements OnChanges, OnInit {
       },
     };
 
-    this.route.queryParams.subscribe((queryParams) => {
-      // No filters present in this case
-      if (queryParams[this.page.pageInfo.path] === undefined) {
-        this.localPageGrid.defaultPagerSize = 15;
-        if (!this.localPageData.state.take) {
-          this.localPageData.state.take = this.localPageGrid.defaultPagerSize;
-        }
+    this.localPageGrid.defaultPagerSize = 15;
 
-        if (!this.localPageData.state.skip) {
-          this.localPageData.state.skip = 0;
-        }
-        return;
-      }
+    if (!this.localPageData.state.take) {
+      this.localPageData.state.take = this.localPageGrid.defaultPagerSize;
+    }
 
-      const parsedParams = JSON.parse(queryParams[this.page.pageInfo.path]);
-      this.localPageData.state.skip = parsedParams.skip;
-      this.localPageData.state.take = parsedParams.take;
-      this.localPageData.state.filter.filters = parsedParams.filters;
-    });
+    if (!this.localPageData.state.skip) {
+      this.localPageData.state.skip = 0;
+    }
 
     // normally the data is fetched by unique source from definition file,
     // now all the grids have same data for example purpose
@@ -114,18 +104,18 @@ export class MasterPageComponent implements OnChanges, OnInit {
   }
 
   private filter(filterRequest: FilterRequest) {
-    if (filterRequest.filters.length === 0) return;
+    if (filterRequest.filters.length > 0) {
+      this.localPageData.dataItems.data = [];
+      this.localPageData.dataItems.total = 0;
 
-    this.localPageData.dataItems.data = [];
-    this.localPageData.dataItems.total = 0;
-
-    for (let i = 0; i < products.length; i++) {
-      if (products[i].ProductName === filterRequest.filters[0].value) {
-        this.localPageData.dataItems.data.push(products[i]);
-        this.localPageData.dataItems.total = products.length;
+      for (let i = 0; i < products.length; i++) {
+        if (products[i].ProductName === filterRequest.filters[0].value) {
+          this.localPageData.dataItems.data.push(products[i]);
+          this.localPageData.dataItems.total = products.length;
+        }
       }
+      this.localPageData.state = filterRequest.state;
     }
-    this.localPageData.state = filterRequest.state;
   }
 
   private clearFilter() {
@@ -168,12 +158,16 @@ export class MasterPageComponent implements OnChanges, OnInit {
 
     let childPath = "";
     if (this.localChilds && this.localChilds.length > 0) {
+      console.log(this.activePath);
       childPath = this.activePath ? this.activePath : this.localChilds[0].path;
+      console.log("child: " + childPath, "activepath: " + this.activePath);
     }
 
     if (!dataWrapper.dataItem) {
-      childPath = "none";
+      childPath = "";
     }
+
+    console.log(childPath);
     const browseResult = await this.navigateToNewURL(queryParams, childPath);
 
     if (browseResult) {
@@ -189,37 +183,38 @@ export class MasterPageComponent implements OnChanges, OnInit {
 
   // Parse current url and add new parameters
   private navigateToNewURL(queryParams: any, childURL?: string) {
-    const url = this.router.url.split("?")[0]; // Only use part before query string (denoted by '?')
     const path = this.page.pageInfo.path;
+    const useFullPaths = [];
 
-    const pathPos = url.lastIndexOf(path);
+    // Get the latest path segments for defining a base path
+    this.router
+      .parseUrl(this.router.url)
+      .root.children.primary.segments.map((segment) => {
+        useFullPaths.push(segment.path);
+      });
 
-    const baseURL = url.substring(0, pathPos + path.length);
+    let baseURL = useFullPaths.join("/");
 
+    // Convert selection to queryParams
     const pathQueryObject = {};
     if (Object.keys(queryParams).length !== 0) {
       pathQueryObject[path] = JSON.stringify(queryParams);
     }
 
-    let nav = true;
-    if (childURL === "dummy-programs") {
-      nav = false;
-      console.warn(childURL);
-    }
-
-    // Build array for router.navigate function and filter out empty strings
-    let navUrl = `${baseURL}/${childURL}`.split("?")[0];
-    const pathIndexInUrl = navUrl.indexOf(childURL);
-    if (!navUrl.endsWith("/")) navUrl += "/";
-    if (pathIndexInUrl === -1) {
-      navUrl += `${childURL}`;
+    if (childURL) {
+      this.activePath = childURL;
+      // Paste the childURL to the baseURL
+      baseURL += "/" + childURL;
     } else {
-      navUrl = navUrl.slice(0, pathIndexInUrl + childURL.length);
+      this.activePath = "";
     }
 
-    const navUrlArray = navUrl.split("/").filter((str) => str.length > 0);
-    if (nav === false) return console.error("navigation error");
-    return this.router.navigate(navUrlArray, {
+    const navUrlArray = baseURL.split("/").filter((str) => str.length > 0);
+
+    // Remove duplicate paths
+    const removeDuplicatePaths = [...new Set(navUrlArray)];
+
+    return this.router.navigate(removeDuplicatePaths, {
       queryParams: pathQueryObject,
     });
   }
@@ -230,15 +225,16 @@ export class MasterPageComponent implements OnChanges, OnInit {
   }
 
   private setActivePath() {
-    const pathSegments = this.router.url
-      .split("/")
-      .filter((segment) => segment);
-    const index = pathSegments.lastIndexOf(this.page.pageInfo.path);
-    if (pathSegments[index + 1]) {
-      this.activePath = pathSegments[index + 1];
-    } else {
-      this.activePath = "";
-    }
+    // const pathSegments = this.router.url
+    //   .split("/")
+    //   .filter((segment) => segment);
+    // const index = pathSegments.lastIndexOf(this.page.pageInfo.path);
+    // console.log(pathSegments, this.page.pageInfo.path);
+    // if (pathSegments[index + 1]) {
+    //   this.activePath = pathSegments[index + 1].split("?")[0];
+    // } else {
+    //   this.activePath = "";
+    // }
   }
 
   // Create queryParamsRow object based on given row filtered with the primary keys
@@ -254,13 +250,9 @@ export class MasterPageComponent implements OnChanges, OnInit {
 
   // Create queryParams object based on given state
   private createQueryParamsFromState(state: State) {
-    const queryParams = {
+    return {
       take: state.take,
       skip: state.skip,
     };
-    if (state.filter.filters.length > 0) {
-      queryParams["filters"] = state.filter.filters;
-    }
-    return queryParams;
   }
 }
