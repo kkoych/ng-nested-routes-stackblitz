@@ -2,10 +2,15 @@ import { Component, Input, OnChanges, OnInit } from "@angular/core";
 import { NavigationEnd, Router } from "@angular/router";
 import { State } from "@progress/kendo-data-query";
 import { products } from "../../../products";
+import { parseQueryFiltersToFilterValues } from "../../classes/filter-parser";
 import { parseUrlPathInSegments } from "../../classes/url-path-parser";
 import { FilterAction } from "../../enums/filter-action.enum";
 import { GridAction } from "../../enums/grid-action.enum";
-import { FilterRequest } from "../../interfaces/filter";
+import {
+  DefaultFilter,
+  FilterRequest,
+  QueryFilter,
+} from "../../interfaces/filter";
 import { GridRequest } from "../../interfaces/grid";
 import {
   Childpage,
@@ -35,7 +40,9 @@ export class MasterPageComponent implements OnChanges, OnInit {
   public queryParamsState: any = {};
 
   private queryParamsRow: any = {};
+  private queryParamsFilter: any = {};
   private subscribers: any = {};
+  private defaultFilter: DefaultFilter;
 
   constructor(
     private router: Router,
@@ -73,6 +80,13 @@ export class MasterPageComponent implements OnChanges, OnInit {
     // now all the grids have same data for example purpose
     this.localPageData.dataItems.data = products as any;
     this.localPageData.dataItems.total = products.length;
+
+    if (this.localPageGrid.gridFilter !== undefined) {
+      this.defaultFilter = this.localPageGrid.gridFilter.defaultFilter;
+    } else {
+      this.defaultFilter = Object.assign({ fields: [] });
+      this.localPageGrid.gridFilter = Object.assign({});
+    }
   }
 
   ngOnInit() {
@@ -90,11 +104,11 @@ export class MasterPageComponent implements OnChanges, OnInit {
   public filterAction(filterRequest: FilterRequest) {
     switch (filterRequest.filterAction) {
       case FilterAction.Filter: {
-        this.filter(filterRequest);
+        this.filter(filterRequest.filters, filterRequest.state);
         break;
       }
       case FilterAction.Clear: {
-        this.clearFilter();
+        this.clearFilter(filterRequest.filters, filterRequest.state);
         break;
       }
       default: {
@@ -103,24 +117,66 @@ export class MasterPageComponent implements OnChanges, OnInit {
     }
   }
 
-  private filter(filterRequest: FilterRequest) {
-    if (filterRequest.filters.length > 0) {
+  private filter(queryFilters: Array<QueryFilter>, state: State) {
+    this.queryParamsState = {};
+    this.queryParamsRow = {};
+
+    // state.filter = parseQueryFilterToJSDOFilter(
+    //   queryFilters,
+    //   this.defaultFilter
+    // );
+
+    this.queryParamsFilter = this.createQueryParamsFromQueryFilters(
+      queryFilters,
+      this.defaultFilter
+    );
+
+    if (state.filter.filters.length > 0) {
       this.localPageData.dataItems.data = [];
       this.localPageData.dataItems.total = 0;
 
       for (let i = 0; i < products.length; i++) {
-        if (products[i].ProductName === filterRequest.filters[0].value) {
+        if (products[i].ProductName === queryFilters[0].value) {
           this.localPageData.dataItems.data.push(products[i]);
           this.localPageData.dataItems.total = products.length;
         }
       }
-      this.localPageData.state = filterRequest.state;
+      this.localPageData.state = state;
     }
+
+    this.navigateToNewURL(this.queryParamsFilter);
   }
 
-  private clearFilter() {
+  private clearFilter(filters: Array<QueryFilter>, state: State) {
+    this.localPageData = {
+      dataItems: {
+        countExact: true,
+        data: [],
+        total: 0,
+      },
+      state: {
+        skip: state.skip ? state.skip : 0,
+        take: this.localPageData.state.take,
+        filter: {
+          logic: "and",
+          filters: [],
+        },
+        sort: state.sort ? state.sort : [],
+        group: state.group ? state.group : [],
+      },
+    };
+
     this.localPageData.dataItems.data = products;
     this.localPageData.dataItems.total = products.length;
+
+    const queryFilters = filters;
+
+    const queryParamsFilter = this.createQueryParamsFromQueryFilters(
+      queryFilters,
+      this.defaultFilter
+    );
+
+    this.navigateToNewURL(queryParamsFilter);
   }
 
   // Switch to correct grid action from grid
@@ -158,16 +214,13 @@ export class MasterPageComponent implements OnChanges, OnInit {
 
     let childPath = "";
     if (this.localChilds && this.localChilds.length > 0) {
-      console.log(this.activePath);
       childPath = this.activePath ? this.activePath : this.localChilds[0].path;
-      console.log("child: " + childPath, "activepath: " + this.activePath);
     }
 
     if (!dataWrapper.dataItem) {
       childPath = "";
     }
 
-    console.log(childPath);
     const browseResult = await this.navigateToNewURL(queryParams, childPath);
 
     if (browseResult) {
@@ -189,7 +242,7 @@ export class MasterPageComponent implements OnChanges, OnInit {
     // Get the latest path segments for defining a base path
     this.router
       .parseUrl(this.router.url)
-      .root.children.primary.segments.map((segment) => {
+      .root?.children?.primary?.segments?.map((segment) => {
         useFullPaths.push(segment.path);
       });
 
@@ -201,22 +254,23 @@ export class MasterPageComponent implements OnChanges, OnInit {
       pathQueryObject[path] = JSON.stringify(queryParams);
     }
 
+    this.queryParamsRow = pathQueryObject;
+
     if (childURL) {
-      this.activePath = childURL;
       // Paste the childURL to the baseURL
       baseURL += "/" + childURL;
+
+      const navUrlArray = baseURL.split("/").filter((str) => str.length > 0);
+
+      // Remove duplicate paths
+      const removeDuplicatePaths = [...new Set(navUrlArray)];
+      return this.router.navigate(removeDuplicatePaths, {
+        queryParams: pathQueryObject,
+      });
     } else {
-      this.activePath = "";
+      const pathsWithoutDetails = useFullPaths[0] + "/" + useFullPaths[1];
+      return this.router.navigateByUrl(pathsWithoutDetails);
     }
-
-    const navUrlArray = baseURL.split("/").filter((str) => str.length > 0);
-
-    // Remove duplicate paths
-    const removeDuplicatePaths = [...new Set(navUrlArray)];
-
-    return this.router.navigate(removeDuplicatePaths, {
-      queryParams: pathQueryObject,
-    });
   }
 
   // Change route to new path
@@ -224,17 +278,42 @@ export class MasterPageComponent implements OnChanges, OnInit {
     this.navigateToNewURL(this.queryParamsRow, path);
   }
 
-  private setActivePath() {
-    // const pathSegments = this.router.url
-    //   .split("/")
-    //   .filter((segment) => segment);
-    // const index = pathSegments.lastIndexOf(this.page.pageInfo.path);
-    // console.log(pathSegments, this.page.pageInfo.path);
-    // if (pathSegments[index + 1]) {
-    //   this.activePath = pathSegments[index + 1].split("?")[0];
-    // } else {
-    //   this.activePath = "";
-    // }
+  private setActivePath(hasSelectionInQueryParams?: boolean) {
+    const pathSegments = parseUrlPathInSegments(this.router.url);
+    const index = pathSegments.lastIndexOf(this.page.pageInfo.path);
+    if (pathSegments[index + 1]) {
+      this.activePath = pathSegments[index + 1];
+    } else {
+      this.activePath = "";
+      if (hasSelectionInQueryParams) {
+        if (this.localChilds && this.localChilds.length > 0) {
+          const queryParams = Object.assign(
+            {},
+            this.queryParamsRow,
+            this.queryParamsState,
+            {} // this.queryParamsFilter <---
+          );
+          // Navigate to this new url
+          this.navigateToNewURL(queryParams, this.localChilds[0].path);
+        }
+      }
+    }
+  }
+
+  // create query filters from filter values
+  private createQueryParamsFromQueryFilters(
+    queryFilters: Array<QueryFilter>,
+    defaultFilter: DefaultFilter
+  ) {
+    let result = {};
+    if (queryFilters.length > 0) {
+      result = parseQueryFiltersToFilterValues(
+        queryFilters,
+        defaultFilter,
+        true
+      );
+    }
+    return result;
   }
 
   // Create queryParamsRow object based on given row filtered with the primary keys
