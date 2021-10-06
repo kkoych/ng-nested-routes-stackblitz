@@ -261,7 +261,7 @@ export class MasterPageComponent implements OnChanges, OnInit {
       baseURL += "/" + childURL;
 
       const navUrlArray = baseURL.split("/").filter((str) => str.length > 0);
-
+      console.log(baseURL, navUrlArray);
       // Remove duplicate paths
       const removeDuplicatePaths = [...new Set(navUrlArray)];
       return this.router.navigate(removeDuplicatePaths, {
@@ -275,6 +275,7 @@ export class MasterPageComponent implements OnChanges, OnInit {
 
   // Change route to new path
   public activatePath(path: string) {
+    console.log(path);
     this.navigateToNewURL(this.queryParamsRow, path);
   }
 

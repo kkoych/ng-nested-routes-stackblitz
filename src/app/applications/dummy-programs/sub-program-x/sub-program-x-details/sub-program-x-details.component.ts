@@ -1,11 +1,9 @@
-import { Component } from '@angular/core';
-import { DetailPage } from '../../../../company/interfaces/page';
-import { SubProgramXDetailsDefinition } from './sub-program-x-details.definition';
+import { Component } from "@angular/core";
+import { DetailPage } from "../../../../company/interfaces/page";
+import { SubProgramXDetailsDefinition } from "./sub-program-x-details.definition";
 
 @Component({
-  template: `
-    <sp-detail-page [page]="page"></sp-detail-page>
-  `
+  template: ` <sp-detail-page [page]="page"></sp-detail-page> `,
 })
 export class SubProgramXDetailsComponent {
   page: DetailPage;
