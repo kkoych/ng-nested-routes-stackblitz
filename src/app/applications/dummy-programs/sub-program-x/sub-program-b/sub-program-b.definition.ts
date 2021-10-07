@@ -25,12 +25,6 @@ export const SubProgramBDetailsDefinition: DetailPage = {
         primaryKeys: ["ProductID"],
       },
       columns: [],
-      childs: [
-        {
-          title: "Y Details",
-          path: "y-details",
-        },
-      ],
     },
   ],
 };
