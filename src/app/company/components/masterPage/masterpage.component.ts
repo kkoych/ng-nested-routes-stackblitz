@@ -236,17 +236,10 @@ export class MasterPageComponent implements OnChanges, OnInit {
 
   // Parse current url and add new parameters
   private navigateToNewURL(queryParams: any, childURL?: string) {
-    const path = this.page.pageInfo.path;
-    const useFullPaths = [];
-
-    // Get the latest path segments for defining a base path
-    this.router
-      .parseUrl(this.router.url)
-      .root?.children?.primary?.segments?.map((segment) => {
-        useFullPaths.push(segment.path);
-      });
-
-    let baseURL = useFullPaths.join("/");
+    const path = "/" + this.page.pageInfo.path;
+    const url = this.router.url;
+    const pathPos = url.lastIndexOf(path);
+    let baseURL = url.substring(0, pathPos + path.length);
 
     // Convert selection to queryParams
     const pathQueryObject = {};
@@ -261,21 +254,18 @@ export class MasterPageComponent implements OnChanges, OnInit {
       baseURL += "/" + childURL;
 
       const navUrlArray = baseURL.split("/").filter((str) => str.length > 0);
-      console.log(baseURL, navUrlArray);
       // Remove duplicate paths
       const removeDuplicatePaths = [...new Set(navUrlArray)];
       return this.router.navigate(removeDuplicatePaths, {
         queryParams: pathQueryObject,
       });
     } else {
-      const pathsWithoutDetails = useFullPaths[0] + "/" + useFullPaths[1];
-      return this.router.navigateByUrl(pathsWithoutDetails);
+      return this.router.navigateByUrl(baseURL);
     }
   }
 
   // Change route to new path
   public activatePath(path: string) {
-    console.log(path);
     this.navigateToNewURL(this.queryParamsRow, path);
   }
 
