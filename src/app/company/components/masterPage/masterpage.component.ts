@@ -1,10 +1,16 @@
 import { Component, Input, OnChanges, OnInit } from "@angular/core";
-import { ActivatedRoute, NavigationEnd, Router } from "@angular/router";
+import { NavigationEnd, Router } from "@angular/router";
 import { State } from "@progress/kendo-data-query";
 import { products } from "../../../products";
+import { parseQueryFiltersToFilterValues } from "../../classes/filter-parser";
+import { parseUrlPathInSegments } from "../../classes/url-path-parser";
 import { FilterAction } from "../../enums/filter-action.enum";
 import { GridAction } from "../../enums/grid-action.enum";
-import { FilterRequest } from "../../interfaces/filter";
+import {
+  DefaultFilter,
+  FilterRequest,
+  QueryFilter,
+} from "../../interfaces/filter";
 import { GridRequest } from "../../interfaces/grid";
 import {
   Childpage,
@@ -34,11 +40,12 @@ export class MasterPageComponent implements OnChanges, OnInit {
   public queryParamsState: any = {};
 
   private queryParamsRow: any = {};
+  private queryParamsFilter: any = {};
   private subscribers: any = {};
+  private defaultFilter: DefaultFilter;
 
   constructor(
     private router: Router,
-    private route: ActivatedRoute,
     private selectedDataService: SelectedDataService
   ) {}
 
@@ -59,30 +66,27 @@ export class MasterPageComponent implements OnChanges, OnInit {
       },
     };
 
-    this.route.queryParams.subscribe((queryParams) => {
-      // No filters present in this case
-      if (queryParams[this.page.pageInfo.path] === undefined) {
-        this.localPageGrid.defaultPagerSize = 15;
-        if (!this.localPageData.state.take) {
-          this.localPageData.state.take = this.localPageGrid.defaultPagerSize;
-        }
+    this.localPageGrid.defaultPagerSize = 15;
 
-        if (!this.localPageData.state.skip) {
-          this.localPageData.state.skip = 0;
-        }
-        return;
-      }
+    if (!this.localPageData.state.take) {
+      this.localPageData.state.take = this.localPageGrid.defaultPagerSize;
+    }
 
-      const parsedParams = JSON.parse(queryParams[this.page.pageInfo.path]);
-      this.localPageData.state.skip = parsedParams.skip;
-      this.localPageData.state.take = parsedParams.take;
-      this.localPageData.state.filter.filters = parsedParams.filters;
-    });
+    if (!this.localPageData.state.skip) {
+      this.localPageData.state.skip = 0;
+    }
 
     // normally the data is fetched by unique source from definition file,
     // now all the grids have same data for example purpose
     this.localPageData.dataItems.data = products as any;
     this.localPageData.dataItems.total = products.length;
+
+    if (this.localPageGrid.gridFilter !== undefined) {
+      this.defaultFilter = this.localPageGrid.gridFilter.defaultFilter;
+    } else {
+      this.defaultFilter = Object.assign({ fields: [] });
+      this.localPageGrid.gridFilter = Object.assign({});
+    }
   }
 
   ngOnInit() {
@@ -100,11 +104,11 @@ export class MasterPageComponent implements OnChanges, OnInit {
   public filterAction(filterRequest: FilterRequest) {
     switch (filterRequest.filterAction) {
       case FilterAction.Filter: {
-        this.filter(filterRequest);
+        this.filter(filterRequest.filters, filterRequest.state);
         break;
       }
       case FilterAction.Clear: {
-        this.clearFilter();
+        this.clearFilter(filterRequest.filters, filterRequest.state);
         break;
       }
       default: {
@@ -113,24 +117,66 @@ export class MasterPageComponent implements OnChanges, OnInit {
     }
   }
 
-  private filter(filterRequest: FilterRequest) {
-    if (filterRequest.filters.length === 0) return;
+  private filter(queryFilters: Array<QueryFilter>, state: State) {
+    this.queryParamsState = {};
+    this.queryParamsRow = {};
 
-    this.localPageData.dataItems.data = [];
-    this.localPageData.dataItems.total = 0;
+    // state.filter = parseQueryFilterToJSDOFilter(
+    //   queryFilters,
+    //   this.defaultFilter
+    // );
 
-    for (let i = 0; i < products.length; i++) {
-      if (products[i].ProductName === filterRequest.filters[0].value) {
-        this.localPageData.dataItems.data.push(products[i]);
-        this.localPageData.dataItems.total = products.length;
+    this.queryParamsFilter = this.createQueryParamsFromQueryFilters(
+      queryFilters,
+      this.defaultFilter
+    );
+
+    if (state.filter.filters.length > 0) {
+      this.localPageData.dataItems.data = [];
+      this.localPageData.dataItems.total = 0;
+
+      for (let i = 0; i < products.length; i++) {
+        if (products[i].ProductName === queryFilters[0].value) {
+          this.localPageData.dataItems.data.push(products[i]);
+          this.localPageData.dataItems.total = products.length;
+        }
       }
+      this.localPageData.state = state;
     }
-    this.localPageData.state = filterRequest.state;
+
+    this.navigateToNewURL(this.queryParamsFilter);
   }
 
-  private clearFilter() {
+  private clearFilter(filters: Array<QueryFilter>, state: State) {
+    this.localPageData = {
+      dataItems: {
+        countExact: true,
+        data: [],
+        total: 0,
+      },
+      state: {
+        skip: state.skip ? state.skip : 0,
+        take: this.localPageData.state.take,
+        filter: {
+          logic: "and",
+          filters: [],
+        },
+        sort: state.sort ? state.sort : [],
+        group: state.group ? state.group : [],
+      },
+    };
+
     this.localPageData.dataItems.data = products;
     this.localPageData.dataItems.total = products.length;
+
+    const queryFilters = filters;
+
+    const queryParamsFilter = this.createQueryParamsFromQueryFilters(
+      queryFilters,
+      this.defaultFilter
+    );
+
+    this.navigateToNewURL(queryParamsFilter);
   }
 
   // Switch to correct grid action from grid
@@ -172,8 +218,9 @@ export class MasterPageComponent implements OnChanges, OnInit {
     }
 
     if (!dataWrapper.dataItem) {
-      childPath = "none";
+      childPath = "";
     }
+
     const browseResult = await this.navigateToNewURL(queryParams, childPath);
 
     if (browseResult) {
@@ -189,39 +236,32 @@ export class MasterPageComponent implements OnChanges, OnInit {
 
   // Parse current url and add new parameters
   private navigateToNewURL(queryParams: any, childURL?: string) {
-    const url = this.router.url.split("?")[0]; // Only use part before query string (denoted by '?')
-    const path = this.page.pageInfo.path;
-
+    const path = "/" + this.page.pageInfo.path;
+    const url = this.router.url;
     const pathPos = url.lastIndexOf(path);
+    let baseURL = url.substring(0, pathPos + path.length);
 
-    const baseURL = url.substring(0, pathPos + path.length);
-
+    // Convert selection to queryParams
     const pathQueryObject = {};
     if (Object.keys(queryParams).length !== 0) {
       pathQueryObject[path] = JSON.stringify(queryParams);
     }
 
-    let nav = true;
-    if (childURL === "dummy-programs") {
-      nav = false;
-      console.warn(childURL);
-    }
+    this.queryParamsRow = pathQueryObject;
 
-    // Build array for router.navigate function and filter out empty strings
-    let navUrl = `${baseURL}/${childURL}`.split("?")[0];
-    const pathIndexInUrl = navUrl.indexOf(childURL);
-    if (!navUrl.endsWith("/")) navUrl += "/";
-    if (pathIndexInUrl === -1) {
-      navUrl += `${childURL}`;
+    if (childURL) {
+      // Paste the childURL to the baseURL
+      baseURL += "/" + childURL;
+
+      const navUrlArray = baseURL.split("/").filter((str) => str.length > 0);
+      // Remove duplicate paths
+      const removeDuplicatePaths = [...new Set(navUrlArray)];
+      return this.router.navigate(removeDuplicatePaths, {
+        queryParams: pathQueryObject,
+      });
     } else {
-      navUrl = navUrl.slice(0, pathIndexInUrl + childURL.length);
+      return this.router.navigateByUrl(baseURL);
     }
-
-    const navUrlArray = navUrl.split("/").filter((str) => str.length > 0);
-    if (nav === false) return console.error("navigation error");
-    return this.router.navigate(navUrlArray, {
-      queryParams: pathQueryObject,
-    });
   }
 
   // Change route to new path
@@ -229,16 +269,42 @@ export class MasterPageComponent implements OnChanges, OnInit {
     this.navigateToNewURL(this.queryParamsRow, path);
   }
 
-  private setActivePath() {
-    const pathSegments = this.router.url
-      .split("/")
-      .filter((segment) => segment);
+  private setActivePath(hasSelectionInQueryParams?: boolean) {
+    const pathSegments = parseUrlPathInSegments(this.router.url);
     const index = pathSegments.lastIndexOf(this.page.pageInfo.path);
     if (pathSegments[index + 1]) {
       this.activePath = pathSegments[index + 1];
     } else {
       this.activePath = "";
+      if (hasSelectionInQueryParams) {
+        if (this.localChilds && this.localChilds.length > 0) {
+          const queryParams = Object.assign(
+            {},
+            this.queryParamsRow,
+            this.queryParamsState,
+            {} // this.queryParamsFilter <---
+          );
+          // Navigate to this new url
+          this.navigateToNewURL(queryParams, this.localChilds[0].path);
+        }
+      }
     }
+  }
+
+  // create query filters from filter values
+  private createQueryParamsFromQueryFilters(
+    queryFilters: Array<QueryFilter>,
+    defaultFilter: DefaultFilter
+  ) {
+    let result = {};
+    if (queryFilters.length > 0) {
+      result = parseQueryFiltersToFilterValues(
+        queryFilters,
+        defaultFilter,
+        true
+      );
+    }
+    return result;
   }
 
   // Create queryParamsRow object based on given row filtered with the primary keys
@@ -254,13 +320,9 @@ export class MasterPageComponent implements OnChanges, OnInit {
 
   // Create queryParams object based on given state
   private createQueryParamsFromState(state: State) {
-    const queryParams = {
+    return {
       take: state.take,
       skip: state.skip,
     };
-    if (state.filter.filters.length > 0) {
-      queryParams["filters"] = state.filter.filters;
-    }
-    return queryParams;
   }
 }

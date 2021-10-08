@@ -30,9 +30,9 @@ export class PageChildsWrapperComponent implements OnChanges {
     this.initTabs();
   }
 
-  // select(tab: { heading: string; path: string; active: boolean }) {
-  //   this.activatedPath.emit(tab.path);
-  // }
+  select(tab: { heading: string; path: string; active: boolean }) {
+    this.activatedPath.emit(tab.path);
+  }
 
   initTabs() {
     this.tabs = this.pageChilds.map((page) => ({

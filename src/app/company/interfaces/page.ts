@@ -1,7 +1,8 @@
-import { DataResult, State } from '@progress/kendo-data-query';
-import { FormField } from './field';
-import { Column } from './grid';
-import { GridInfo } from './grid';
+import { DataResult, State } from "@progress/kendo-data-query";
+import { FormField } from "./field";
+import { GridFilter } from "./filter";
+import { Column } from "./grid";
+import { GridInfo } from "./grid";
 
 export interface MasterPage {
   pageInfo: PageInfo;
@@ -31,6 +32,7 @@ export interface PageGrid {
   source: Source;
   columns: Array<Column>;
   childs?: Array<Childpage>;
+  gridFilter?: GridFilter;
 }
 
 export interface Source {

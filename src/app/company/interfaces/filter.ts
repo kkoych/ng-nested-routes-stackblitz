@@ -16,3 +16,20 @@ export interface QueryFilter {
   value: string | number | boolean | Array<string | number>;
   deviation?: string;
 }
+
+export interface GridFilter {
+  title?: string;
+  defaultFilter: DefaultFilter;
+}
+
+export interface DefaultFilter {
+  title?: string;
+  fields: Array<FilterFieldBase>;
+}
+
+export interface FilterFieldBase {
+  field?: Object;
+  hidden: boolean;
+  defaultFilterField?: boolean;
+  operator?: string;
+}

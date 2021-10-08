@@ -1,12 +1,12 @@
-import { Component, Input, OnInit } from '@angular/core';
-import { ActivatedRoute } from '@angular/router';
-import { DetailPage, PageForm, PageGrid } from '../../interfaces/page';
-import { SelectedDataService } from '../../services/selected-data.service';
+import { Component, Input, OnInit } from "@angular/core";
+import { ActivatedRoute } from "@angular/router";
+import { DetailPage, PageForm, PageGrid } from "../../interfaces/page";
+import { SelectedDataService } from "../../services/selected-data.service";
 
 @Component({
-  selector: 'sp-detail-page',
-  templateUrl: './detail-page.component.html',
-  styleUrls: ['./detail-page.component.scss']
+  selector: "sp-detail-page",
+  templateUrl: "./detail-page.component.html",
+  styleUrls: ["./detail-page.component.scss"],
 })
 export class DetailPageComponent implements OnInit {
   @Input()
@@ -25,7 +25,7 @@ export class DetailPageComponent implements OnInit {
   ngOnInit() {
     this.initFilters();
 
-    this.selectedDataService.selectedData$.subscribe(selectedData => {
+    this.selectedDataService.selectedData$.subscribe((selectedData) => {
       this.selectedData = selectedData;
     });
 
@@ -37,8 +37,8 @@ export class DetailPageComponent implements OnInit {
       if (this.page.pageGrids) {
         this.page.pageGrids.forEach((grid, index) => {
           this.grids.push({
-            key: 'grid' + (index + 1),
-            grid: grid
+            key: "grid" + (index + 1),
+            grid: grid,
           });
         });
       }
@@ -46,10 +46,13 @@ export class DetailPageComponent implements OnInit {
   }
 
   initFilters() {
-    this.route.queryParams.subscribe((queryParams) => {
-      if (queryParams[this.page.pageInfo.path] === undefined) return;
-      
-      this.filters = JSON.parse(queryParams[this.page.pageInfo.path]);
+    this.route.queryParams.subscribe((params) => {
+      if (
+        Object.keys(params).length > 0 &&
+        params.hasOwnProperty(this.page.pageInfo.path)
+      ) {
+        this.filters = JSON.parse(params[this.page.pageInfo.path]);
+      }
     });
   }
 }
