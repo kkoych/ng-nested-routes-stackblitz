@@ -1,5 +1,10 @@
 import { Component, Input, OnChanges, OnInit } from "@angular/core";
-import { NavigationEnd, Router } from "@angular/router";
+import {
+  ActivatedRoute,
+  NavigationEnd,
+  ParamMap,
+  Router,
+} from "@angular/router";
 import { State } from "@progress/kendo-data-query";
 import { products } from "../../../products";
 import { parseQueryFiltersToFilterValues } from "../../classes/filter-parser";
@@ -39,6 +44,7 @@ export class MasterPageComponent implements OnChanges, OnInit {
   public activePath = "";
   public queryParamsState: any = {};
 
+  private allQueryParamMap: ParamMap;
   private queryParamsRow: any = {};
   private queryParamsFilter: any = {};
   private subscribers: any = {};
@@ -46,6 +52,7 @@ export class MasterPageComponent implements OnChanges, OnInit {
 
   constructor(
     private router: Router,
+    private route: ActivatedRoute,
     private selectedDataService: SelectedDataService
   ) {}
 
@@ -87,6 +94,23 @@ export class MasterPageComponent implements OnChanges, OnInit {
       this.defaultFilter = Object.assign({ fields: [] });
       this.localPageGrid.gridFilter = Object.assign({});
     }
+
+    this.route.queryParamMap.subscribe((paramMap) => {
+      this.allQueryParamMap = paramMap;
+      if (this.allQueryParamMap.keys.length === 0) return;
+      if (this.allQueryParamMap.get(this.page.pageInfo.path) === null) return;
+      const productID = JSON.parse(
+        this.allQueryParamMap.get(this.page.pageInfo.path)
+      )["ProductID"];
+
+      if (productID !== undefined) {
+        const foundProductByID = this.localPageData.dataItems.data.find(
+          (dataItem) => dataItem.ProductID === productID
+        );
+
+        this.selectedDataService.selectedData(foundProductByID);
+      }
+    });
   }
 
   ngOnInit() {
@@ -242,12 +266,12 @@ export class MasterPageComponent implements OnChanges, OnInit {
     let baseURL = url.substring(0, pathPos + path.length);
 
     // Convert selection to queryParams
-    const pathQueryObject = {};
-    if (Object.keys(queryParams).length !== 0) {
-      pathQueryObject[path] = JSON.stringify(queryParams);
-    }
+    // const pathQueryObject = {};
+    // if (Object.keys(queryParams).length !== 0) {
+    //   pathQueryObject[path] = JSON.stringify(queryParams);
+    // }
 
-    this.queryParamsRow = pathQueryObject;
+    // this.queryParamsRow = pathQueryObject;
 
     if (childURL) {
       // Paste the childURL to the baseURL
@@ -257,11 +281,51 @@ export class MasterPageComponent implements OnChanges, OnInit {
       // Remove duplicate paths
       const removeDuplicatePaths = [...new Set(navUrlArray)];
       return this.router.navigate(removeDuplicatePaths, {
-        queryParams: pathQueryObject,
+        queryParams: this.processQueryParameters(baseURL, queryParams),
       });
     } else {
       return this.router.navigateByUrl(baseURL);
     }
+  }
+
+  private processQueryParameters(navUrl: string, params: any) {
+    const urlSegmentsSet = new Set();
+    navUrl
+      .split("/")
+      .filter((segment) => segment.length > 0)
+      .forEach((segment) => {
+        urlSegmentsSet.add(segment);
+      });
+    const existingParamKeysSet = new Set();
+    if (this.allQueryParamMap?.keys.length === 0) {
+      existingParamKeysSet.add(this.page.pageInfo.path);
+    }
+    if (!existingParamKeysSet.has(this.page.pageInfo.path)) {
+      existingParamKeysSet.add(this.page.pageInfo.path);
+    }
+    this.allQueryParamMap?.keys.forEach((key) => {
+      existingParamKeysSet.add(key);
+    });
+    const paramKeysSet = new Set(
+      [...urlSegmentsSet].filter((segment) => existingParamKeysSet.has(segment))
+    );
+    const queryParams = {};
+    paramKeysSet.forEach((key) => {
+      const keyString = key as string;
+      const newParameters = keyString === this.page.pageInfo.path ? params : {};
+      if ((this.allQueryParamMap?.get(keyString) as string) === undefined)
+        return;
+      let oldParams = JSON.parse(
+        this.allQueryParamMap?.get(keyString) as string
+      );
+      if (this.allQueryParamMap?.get(keyString) === null) {
+        queryParams[keyString] = newParameters;
+      } else {
+        queryParams[keyString] = Object.assign(oldParams, newParameters);
+      }
+      queryParams[keyString] = JSON.stringify(queryParams[keyString]);
+    });
+    return queryParams;
   }
 
   // Change route to new path
